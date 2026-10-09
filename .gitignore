@@ -1,0 +1,4 @@
+# Binaries, written before any code is.
+/richdata
+*.test
+*.out
