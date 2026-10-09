@@ -1,0 +1,6 @@
+github.com/go-richdoc/markdown v0.10.0 h1:fIQdrbJhWS+NVE+ExDRUQS71Prr6hKeVKSTOn4ooR4A=
+github.com/go-richdoc/markdown v0.10.0/go.mod h1:ly2XGC8MpYNPuY7S4jVB2V3UEaUUh5g8hVNtFon0T+0=
+github.com/go-richdoc/richdoc v0.6.0 h1:cema3hE5AAektDXTmvhWyBVnkCcZTVKhnkingwqsN7k=
+github.com/go-richdoc/richdoc v0.6.0/go.mod h1:RhxAcqwoUg1pnTYCiRdKILzOZwOmraO0dMJI4N6yY70=
+github.com/yuin/goldmark v1.8.6 h1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=
+github.com/yuin/goldmark v1.8.6/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
