@@ -22,6 +22,7 @@ package json
 import (
 	"bytes"
 	encodingjson "encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -44,6 +45,13 @@ type Options struct {
 	// MaxDepth, MaxNodes, MaxRows and MaxColumns override the ceilings in
 	// [github.com/go-richdoc/data/shape]. Zero means those.
 	MaxDepth, MaxNodes, MaxRows, MaxColumns int
+
+	// MaxSourceValues overrides [shape.MaxSourceValues]: how many values the
+	// source may declare, counted before it is decoded. Zero means that one.
+	//
+	// ⛔ This is the only ceiling here that bounds the DECODER rather than the
+	// document. Raise it and a refused file still costs what it costs to decode.
+	MaxSourceValues int
 }
 
 // Parse reads one JSON value.
@@ -52,6 +60,16 @@ func Parse(src []byte, opt Options) (*richdoc.Document, error) {
 		return nil, shape.LimitError{What: "bytes", Limit: shape.MaxInputBytes}
 	}
 	c := newConv(opt)
+
+	// ⛔ BEFORE THE DECODER, not after it. The node ceiling below is checked
+	// while the document is built, which is after encoding/json has turned the
+	// whole source into an any — so it stopped the answer and not the work.
+	// Measured: two flat arrays both refused at node 500 001, the larger one
+	// eight times the source, cost 243 MB and 1.275 GB. The XML reader, which
+	// counts inside its own token walk, gave the same figure for both.
+	if err := prescan(src, c.maxSourceValues); err != nil {
+		return nil, err
+	}
 
 	// ⛔ A decoder with UseNumber, so 64-bit integers survive. encoding/json's
 	// default turns every number into a float64, and an identifier of more
@@ -63,6 +81,24 @@ func Parse(src []byte, opt Options) (*richdoc.Document, error) {
 	var v any
 	if err := dec.Decode(&v); err != nil {
 		return nil, fmt.Errorf("reading JSON: %w", err)
+	}
+
+	// ⛔ ONE VALUE, AND SAID OUT LOUD WHEN THERE ARE MORE. Decode reads one
+	// value and leaves the stream alone, so `{"a":1} {"b":2}` came back as a
+	// document holding the first object and no error at all — a file with two
+	// values in it converted to half of itself, silently, which is the same
+	// kind of loss as rendering null as the empty string. A reader whose answer
+	// is "some of your file" has to say so.
+	//
+	// ⛔ One more TOKEN and io.EOF, not dec.More(): More peeks for a non-space
+	// byte and answers false on a `]` or a `}`, so `1]` would have slipped
+	// through the very check meant to catch it.
+	//
+	// Found by the fuzz target that checks the pre-scan against the converter —
+	// it minimised to `0 0 0[0[0[0`, which is nine values to a scan of the
+	// bytes and one value to the decoder.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("reading JSON: one value and then more: %w", err)
 	}
 
 	blocks, err := c.value(v, 1)
@@ -88,12 +124,17 @@ type conv struct {
 	opt                                  Options
 	nodes                                int
 	maxDepth, maxNodes, maxRows, maxCols int
+	maxSourceValues                      int
 }
 
 func newConv(opt Options) *conv {
 	c := &conv{opt: opt,
 		maxDepth: opt.MaxDepth, maxNodes: opt.MaxNodes,
-		maxRows: opt.MaxRows, maxCols: opt.MaxColumns}
+		maxRows: opt.MaxRows, maxCols: opt.MaxColumns,
+		maxSourceValues: opt.MaxSourceValues}
+	if c.maxSourceValues <= 0 {
+		c.maxSourceValues = shape.MaxSourceValues
+	}
 	if c.maxDepth <= 0 {
 		c.maxDepth = shape.MaxDepth
 	}

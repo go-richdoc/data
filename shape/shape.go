@@ -37,22 +37,69 @@ const (
 	// MaxDepth is how far a tree may nest. JSON and XML are both recursive,
 	// and the depth is chosen by the file.
 	//
-	// ⛔ encoding/json and encoding/xml are iterative enough not to overflow a
-	// stack here, but the DOCUMENT built from a deep tree is nested lists all
-	// the way down, and every consumer of richdoc walks it recursively. The
-	// ceiling protects them, not us.
+	// ⛔ Neither decoder can overflow a stack here, but NOT because either is
+	// iterative — encoding/json's decode of a value into an any does recurse,
+	// one frame per level. It cannot run away because the scanner refuses past
+	// a hard constant: maxNestingDepth = 10000, encoding/json/scanner.go:148,
+	// and the same constant again at encoding/json/jsontext/state.go:53 for the
+	// v2 path, so GOEXPERIMENT=jsonv2 does not change the answer. encoding/xml
+	// hands out tokens and keeps no tree, so its nesting is whatever the caller
+	// stacks — ours, bounded here.
+	//
+	// What this ceiling is actually for is the DOCUMENT: a deep tree becomes
+	// nested lists all the way down, and every consumer of richdoc walks those
+	// recursively with no constant of its own. The ceiling protects them.
 	MaxDepth = 100
 
 	// MaxNodes is how many values a tree may hold in total. Depth and breadth
 	// are different ways to be large, and bounding only one leaves the other.
 	MaxNodes = 500_000
+
+	// MaxSourceValues is how many JSON values the SOURCE may declare, counted
+	// in a pass over the bytes before anything is decoded.
+	//
+	// ⛔ IT IS A DIFFERENT QUANTITY FROM MaxNodes, on purpose. MaxNodes bounds
+	// what is BUILT and is checked while building; it stopped the answer and
+	// not the work, because encoding/json decodes the whole value into an any
+	// BEFORE the converter sees its first node. Measured: two flat arrays both
+	// refused at node 500 001, the larger one eight times the source, cost 5.2
+	// times the allocation — 243 MB against 1.275 GB. The XML reader, which
+	// counts inside its own token walk, gave 1.0 on the same test.
+	//
+	// ⛔ THE VALUE OF THE CONSTANT IS DERIVED, NOT CHOSEN. It must never refuse
+	// a document the converter would have accepted, so it needs a floor on the
+	// nodes the converter will count given v values in the source. The thinnest
+	// case is the TABLE path: an array of n objects of k keys is 1+n+nk values
+	// in the source and 1+nk nodes in the converter, because table() visits the
+	// cells and not the objects. That ratio is worst at k=1, where the
+	// converter counts (v-1)/2. So v > 2*MaxNodes+2 implies more than MaxNodes
+	// nodes, and a refusal here is one the converter was going to make anyway.
+	// TestTheSourceCeilingNeverRefusesWhatTheConverterWouldAccept keeps it true.
+	MaxSourceValues = 2*MaxNodes + 2
+
+	// MaxCells is how many cells a table may hold.
+	//
+	// ⛔ MaxRows and MaxColumns MULTIPLY, and nothing bounded the product: one
+	// hundred thousand rows of a thousand columns is a hundred million cells,
+	// each a richdoc.Cell holding an inline run — measured at 120 bytes
+	// allocated per cell, so 12 GB from a file the input ceiling allows.
+	//
+	// ⛔ The value is the tree readers' MaxNodes, because it is the same
+	// quantity under another name: a cell is a value a document holds. The
+	// defect it closes is an INCONSISTENCY, not a taste — the same export of
+	// 100 000 rows by 20 fields was already refused as JSON, at 2 000 000
+	// nodes, and accepted as CSV at 2 000 000 cells. Two formats of one
+	// repository answering differently about one quantity of data is the thing
+	// package shape exists to prevent. A caller who wants the old ceiling says
+	// so with Options.MaxCells.
+	MaxCells = MaxNodes
 )
 
 // A LimitError says which ceiling was reached and what it is, because the whole
 // value of a refusal is that the person reading it can tell a hostile file from
 // a legitimately enormous one.
 type LimitError struct {
-	What  string // "rows", "columns", "depth", "nodes", "bytes"
+	What  string // "rows", "columns", "cells", "depth", "nodes", "values", "bytes"
 	Limit int
 }
 
