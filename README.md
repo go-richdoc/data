@@ -168,6 +168,30 @@ because `table()` visits the cells and not the objects holding them — so
 going to refuse anyway. A test asserts that relation, and a fuzz target hunts
 for a counterexample to it.
 
+What a file of exactly 64 MiB — the input ceiling — now costs at each reader's
+cheapest shape (`DATA_CEILING_REPORT=1 go test -run TestTheInputCeilingIsNotAMemoryCeiling`):
+
+| | allocated before refusing | refused for |
+| --- | --- | --- |
+| CSV, 33 554 rows × 1 000 columns | 76.5 MB | cells |
+| JSON, 33 554 431 values | **40 bytes** | values |
+| XML, 16 777 214 elements | 158.8 MB | nodes |
+
+⛔ The asymmetry is the design, not a defect: a ceiling checked **as the
+document is built** costs what the ceiling permits, because the reader cannot
+know it is past 500 000 nodes until it has 500 001 of them. A ceiling checked
+over the **source bytes** costs nothing. Both are bounds; only one is free.
+
+⛔ And the report had to be fixed before it could be read. Its first version
+sized the inputs from a rough bytes-per-item figure and built 67 108 865 and
+67 108 871 bytes — one and seven bytes **over** the ceiling — so two of the
+three rows measured the input check, logged `0 allocated`, and looked exactly
+like the measurement they were not. It now derives each size from the builder's
+own formula and fails if an input is over. Its `retained` column was a `uint64`
+subtraction that printed `18446744073642448112` when the heap ended *lower* than
+it started, which is the sort of number a review does not read as negative four
+hundred kilobytes.
+
 ⛔ Nesting needs no such pass. `encoding/json` refuses past
 `maxNestingDepth = 10000` (`encoding/json/scanner.go:148`, and the same constant
 at `encoding/json/jsontext/state.go:53`, so `GOEXPERIMENT=jsonv2` does not

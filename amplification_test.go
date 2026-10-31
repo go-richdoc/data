@@ -38,7 +38,13 @@ import (
 // gigabyte, and on a machine serving many such calls that is the number that
 // matters. HeapAlloc with the document still reachable is the second figure,
 // and the two answer different questions.
-func allocated(t *testing.T, f func() (*richdoc.Document, error)) (total, retained uint64, err error) {
+// ⛔ retained is SIGNED, and that is not a detail. HeapAlloc can be LOWER after
+// the call than before it — a refusal frees the decoder's working set and the
+// GC may return more than the call ever held. As a uint64 subtraction that came
+// out as 18446744073642448112, which is the sort of number that survives a
+// review because nobody reads twenty digits as "negative four hundred
+// kilobytes". Found by running the report, not by reading it.
+func allocated(t *testing.T, f func() (*richdoc.Document, error)) (total uint64, retained int64, err error) {
 	t.Helper()
 	runtime.GC()
 	var before, after runtime.MemStats
@@ -51,7 +57,7 @@ func allocated(t *testing.T, f func() (*richdoc.Document, error)) (total, retain
 	runtime.GC()
 	var held runtime.MemStats
 	runtime.ReadMemStats(&held)
-	retained = held.HeapAlloc - before.HeapAlloc
+	retained = int64(held.HeapAlloc) - int64(before.HeapAlloc)
 	// ⛔ The document has to be reachable PAST the second reading, or the GC is
 	// entitled to collect the very thing being weighed and "retained" comes
 	// back as noise near zero.
@@ -164,29 +170,41 @@ func TestTheInputCeilingIsNotAMemoryCeiling(t *testing.T) {
 
 	const atTheCeiling = shape.MaxInputBytes // 64 MiB
 
+	// ⛔ EVERY INPUT IS CHECKED AGAINST THE CEILING BEFORE IT IS PARSED. The
+	// first version of this report divided the ceiling by a rough bytes-per-item
+	// figure and built sources of 67 108 865 and 67 108 871 bytes — one and
+	// seven bytes OVER. Both were refused for "bytes", both logged "0
+	// allocated", and the report answered a question nobody asked while looking
+	// exactly like the one that was. The sizes below are the builders' own
+	// formulas, and the guard says so when one of them changes.
+	report := func(t *testing.T, name string, src []byte, items int,
+		parse func([]byte) (*richdoc.Document, error)) {
+		t.Helper()
+		if len(src) > atTheCeiling {
+			t.Fatalf("%s: the input is %d bytes, past the %d-byte ceiling, so this "+
+				"would measure the input check and not the reader", name, len(src), atTheCeiling)
+		}
+		total, retained, err := allocated(t, func() (*richdoc.Document, error) { return parse(src) })
+		t.Logf("%s: %d bytes (%d items) -> %d allocated, %d retained, err=%v",
+			name, len(src), items, total, retained, err)
+	}
+
 	t.Run("csv", func(t *testing.T) {
-		rows := atTheCeiling / 2000 // a 1000-column row is 2000 bytes
-		src := csvCells(rows, 1000)
-		total, retained, err := allocated(t, func() (*richdoc.Document, error) {
-			return csv.Parse(src, csv.Options{})
-		})
-		t.Logf("%d bytes (%d rows x 1000 columns) -> %d allocated, %d retained, err=%v",
-			len(src), rows, total, retained, err)
+		// A 1 000-column row of one-character cells is exactly 2 000 bytes.
+		rows := atTheCeiling / 2000
+		report(t, "csv", csvCells(rows, 1000), rows*1000,
+			func(b []byte) (*richdoc.Document, error) { return csv.Parse(b, csv.Options{}) })
 	})
 	t.Run("json", func(t *testing.T) {
-		src := jsonFlatArray(atTheCeiling / 2)
-		total, retained, err := allocated(t, func() (*richdoc.Document, error) {
-			return json.Parse(src, json.Options{})
-		})
-		t.Logf("%d bytes (%d values) -> %d allocated, %d retained, err=%v",
-			len(src), atTheCeiling/2, total, retained, err)
+		// jsonFlatArray(n) is 2n+1 bytes: two brackets, n digits, n-1 commas.
+		n := (atTheCeiling - 1) / 2
+		report(t, "json", jsonFlatArray(n), n,
+			func(b []byte) (*richdoc.Document, error) { return json.Parse(b, json.Options{}) })
 	})
 	t.Run("xml", func(t *testing.T) {
-		src := xmlLeaves(atTheCeiling / 4)
-		total, retained, err := allocated(t, func() (*richdoc.Document, error) {
-			return xml.Parse(src, xml.Options{})
-		})
-		t.Logf("%d bytes (%d elements) -> %d allocated, %d retained, err=%v",
-			len(src), atTheCeiling/4, total, retained, err)
+		// xmlLeaves(n) is 4n+7 bytes: <r>, n times <a/>, </r>.
+		n := (atTheCeiling - 7) / 4
+		report(t, "xml", xmlLeaves(n), n,
+			func(b []byte) (*richdoc.Document, error) { return xml.Parse(b, xml.Options{}) })
 	})
 }
