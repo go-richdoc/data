@@ -22,6 +22,7 @@ package json
 import (
 	"bytes"
 	encodingjson "encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -80,6 +81,24 @@ func Parse(src []byte, opt Options) (*richdoc.Document, error) {
 	var v any
 	if err := dec.Decode(&v); err != nil {
 		return nil, fmt.Errorf("reading JSON: %w", err)
+	}
+
+	// ⛔ ONE VALUE, AND SAID OUT LOUD WHEN THERE ARE MORE. Decode reads one
+	// value and leaves the stream alone, so `{"a":1} {"b":2}` came back as a
+	// document holding the first object and no error at all — a file with two
+	// values in it converted to half of itself, silently, which is the same
+	// kind of loss as rendering null as the empty string. A reader whose answer
+	// is "some of your file" has to say so.
+	//
+	// ⛔ One more TOKEN and io.EOF, not dec.More(): More peeks for a non-space
+	// byte and answers false on a `]` or a `}`, so `1]` would have slipped
+	// through the very check meant to catch it.
+	//
+	// Found by the fuzz target that checks the pre-scan against the converter —
+	// it minimised to `0 0 0[0[0[0`, which is nine values to a scan of the
+	// bytes and one value to the decoder.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("reading JSON: one value and then more: %w", err)
 	}
 
 	blocks, err := c.value(v, 1)

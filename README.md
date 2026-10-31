@@ -70,6 +70,13 @@ looks plausible.
 because Go randomises map iteration on purpose and two conversions of one file
 must agree, or no diff of two documents means anything.
 
+⛔ **One value, and said out loud when there are more** (v0.2.0). `Decoder.Decode`
+reads one value and leaves the rest of the stream alone, so `{"a":1} {"b":2}` came
+back as a document holding the first object and **no error at all** — a file
+converted to half of itself, in silence, which is the same kind of loss as
+rendering `null` as the empty string. A reader whose honest answer is "some of your
+file" has to say so.
+
 ### XML: repeated siblings are a table, attributes are columns
 
 The same decision as JSON, for the same reason. An `isbn` is the identifying
@@ -138,8 +145,23 @@ walk, gave **1.0** — which is what makes it a measurement rather than the
 observation that a bigger file allocates more.
 
 The fix is a pass over the source bytes that counts **values** before anything
-is decoded. A hostile 16 MiB array is now refused in **40 bytes**. The constant
-is derived, not chosen: an array of *n* single-key objects is the thinnest shape
+is decoded. A hostile 16 MiB array is now refused in **40 bytes**.
+
+⛔ **The fuzz target broke the first draft of it in 700 milliseconds**, and the
+minimised input is worth keeping: `0 0 0[0[0[0`. Nine values to a scan of the
+file; **one** value to `Decoder.Decode`, which reads one and leaves the stream
+alone. So the guard refused a file the converter accepts — and a guard that
+refuses what the thing it protects would accept is worse than no guard. It now
+stops where the decoder stops.
+
+That is also how `Parse` came to notice it was **returning half a file in
+silence**: `{"a":1} {"b":2}` gave a document holding the first object and no
+error. It now says so. ⛔ The check reads one more **token** and asks for
+`io.EOF`, not `dec.More()` — `More` peeks for a non-space byte and answers false
+on a `]` or a `}`, so `1]` would have walked straight through the check written
+to catch it.
+
+The ceiling constant is derived, not chosen: an array of *n* single-key objects is the thinnest shape
 there is — `1+2n` values in the source against `1+n` nodes in the converter,
 because `table()` visits the cells and not the objects holding them — so
 `MaxSourceValues = 2·MaxNodes + 2` can only ever refuse a file the converter was

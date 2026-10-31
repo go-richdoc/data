@@ -29,24 +29,24 @@ func TestTheCountIsOfValuesAndNotTokens(t *testing.T) {
 		{`-1.5e10`, 1},
 		{`[]`, 1},
 		{`{}`, 1},
-		{`[1,2,3]`, 4},                  // the array and three numbers
-		{`{"a":1}`, 2},                  // the object and one value; "a" is a key
-		{`{"a":1,"b":2}`, 3},            // two keys, neither counted
-		{`{"a":{"b":"c"}}`, 3},          // outer, inner, "c"
-		{`[{"a":1},{"a":2}]`, 5},        // array, two objects, two numbers
-		{`{"a":[1,{"b":2}]}`, 5},        // object, array, 1, object, 2
-		{` { "a" : [ 1 ] } `, 3},        // whitespace everywhere
-		{`{"":""}`, 2},                  // an empty key and an empty value
-		{`{"a:b":1}`, 2},                // a colon inside a key
-		{`{"a,b":1}`, 2},                // a comma inside a key
-		{`{"a\"b":1}`, 2},               // an escaped quote inside a key
-		{`{"a":"b\"c"}`, 2},             // an escaped quote inside a value
-		{`{"a":"\\"}`, 2},               // a value that is one backslash
-		{"{\"a\":\"\\u0022\"}", 2},      // an escaped quote as four hex digits
-		{`["{",   "}"]`, 3},             // braces inside strings open nothing
-		{`[[[1]]]`, 4},                  // three arrays and a number
-		{`{"a":{}}`, 2},                 // an empty object as a value
-		{`{"a":[]}`, 2},                 // an empty array as a value
+		{`[1,2,3]`, 4},             // the array and three numbers
+		{`{"a":1}`, 2},             // the object and one value; "a" is a key
+		{`{"a":1,"b":2}`, 3},       // two keys, neither counted
+		{`{"a":{"b":"c"}}`, 3},     // outer, inner, "c"
+		{`[{"a":1},{"a":2}]`, 5},   // array, two objects, two numbers
+		{`{"a":[1,{"b":2}]}`, 5},   // object, array, 1, object, 2
+		{` { "a" : [ 1 ] } `, 3},   // whitespace everywhere
+		{`{"":""}`, 2},             // an empty key and an empty value
+		{`{"a:b":1}`, 2},           // a colon inside a key
+		{`{"a,b":1}`, 2},           // a comma inside a key
+		{`{"a\"b":1}`, 2},          // an escaped quote inside a key
+		{`{"a":"b\"c"}`, 2},        // an escaped quote inside a value
+		{`{"a":"\\"}`, 2},          // a value that is one backslash
+		{"{\"a\":\"\\u0022\"}", 2}, // an escaped quote as four hex digits
+		{`["{",   "}"]`, 3},        // braces inside strings open nothing
+		{`[[[1]]]`, 4},             // three arrays and a number
+		{`{"a":{}}`, 2},            // an empty object as a value
+		{`{"a":[]}`, 2},            // an empty array as a value
 		{`[{"a":{"b":1}},{"a":{"b":2}}]`, 7},
 	}
 	for _, c := range cases {
@@ -57,6 +57,66 @@ func TestTheCountIsOfValuesAndNotTokens(t *testing.T) {
 		}
 		if got != c.want {
 			t.Errorf("%s: counted %d values, want %d", c.src, got, c.want)
+		}
+	}
+}
+
+// TestTheScanStopsWhereTheDecoderStops.
+//
+// ⛔ THE FUZZ TARGET WROTE THIS TEST. It minimised to `0 0 0[0[0[0` in 700
+// milliseconds: nine values to a scan of the whole file, ONE value to
+// Decoder.Decode, which reads one and leaves the stream alone. A guard counting
+// the rest refused a file the converter accepts, and a guard that refuses what
+// the thing it protects would accept is worse than no guard.
+func TestTheScanStopsWhereTheDecoderStops(t *testing.T) {
+	cases := []struct {
+		src  string
+		want int
+	}{
+		{`0 0 0[0[0[0`, 1},     // the minimised counterexample
+		{`{"a":1} {"b":2}`, 2}, // the first object only
+		{`[1] [2,3,4]`, 2},     // the first array and its one element
+		{`1 2 3`, 1},
+		{`"a" "b"`, 1},
+		{`{} {}`, 1},
+		{`[] []`, 1},
+	}
+	for _, c := range cases {
+		got, ok := countValues([]byte(c.src), 1<<30)
+		if !ok {
+			t.Errorf("%s: the count came back untrustworthy", c.src)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s: counted %d values, want %d — the decoder reads one value", c.src, got, c.want)
+		}
+	}
+}
+
+// TestOneValueAndThenMoreIsSaidOutLoud: the same discovery from the other side.
+// Parse read one value out of a file holding two and returned no error, so a
+// file converted to half of itself in silence.
+func TestOneValueAndThenMoreIsSaidOutLoud(t *testing.T) {
+	for _, src := range []string{
+		`{"a":1} {"b":2}`,
+		`1 2`,
+		`0 0 0[0[0[0`,
+		`[1] garbage`,
+		// ⛔ A trailing `]`, which is why this check reads a TOKEN and asks for
+		// io.EOF: dec.More() answers false on `]` and `}`, so this one case
+		// would have walked through the check written to catch it.
+		`1]`,
+		`{"a":1}}`,
+	} {
+		if _, err := Parse([]byte(src), Options{}); err == nil {
+			t.Errorf("%q held more than one value and was accepted", src)
+		}
+	}
+
+	// The control: one value, with whatever whitespace around it, still parses.
+	for _, src := range []string{`1`, "  1  \n", `{"a":1}`, "\n[1,2]\t", `"a"`} {
+		if _, err := Parse([]byte(src), Options{}); err != nil {
+			t.Errorf("%q is one value and was refused: %v", src, err)
 		}
 	}
 }

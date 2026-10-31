@@ -31,13 +31,23 @@ const stdlibMaxNestingDepth = 10000
 // A second opinion on syntax would be a second set of error strings to keep
 // agreeing with the first.
 //
+// ⛔ IT STOPS AT THE END OF THE FIRST TOP-LEVEL VALUE, because that is where
+// the decoder stops: Decoder.Decode reads ONE value and leaves the rest of the
+// stream alone. A first draft scanned to the end of the file and the fuzz target
+// broke it in 700 milliseconds with `0 0 0[0[0[0` — nine values to this
+// function, one value to the decoder, so the guard refused a file the converter
+// accepts. The minimised input is committed under
+// testdata/fuzz/FuzzPrescanAgreesWithTheConverter.
+//
 // The second return says whether the count can be trusted: it is false once the
 // nesting passes [stdlibMaxNestingDepth], where the decoder refuses anyway.
 func countValues(src []byte, limit int) (int, bool) {
 	// stack holds one byte per open container: '{' or '['. expectKey is
-	// meaningful only when the innermost container is an object.
+	// meaningful only when the innermost container is an object. started says
+	// the top-level value has begun, so that closing it ends the scan.
 	var stack []byte
 	expectKey := false
+	started := false
 	count := 0
 
 	i := 0
@@ -48,6 +58,7 @@ func countValues(src []byte, limit int) (int, bool) {
 			i++
 		case '{':
 			count++
+			started = true
 			if len(stack) >= stdlibMaxNestingDepth {
 				return count, false
 			}
@@ -56,6 +67,7 @@ func countValues(src []byte, limit int) (int, bool) {
 			i++
 		case '[':
 			count++
+			started = true
 			if len(stack) >= stdlibMaxNestingDepth {
 				return count, false
 			}
@@ -77,6 +89,7 @@ func countValues(src []byte, limit int) (int, bool) {
 		case '"':
 			if !expectKey {
 				count++
+				started = true
 			}
 			i = endOfString(src, i)
 		default:
@@ -85,8 +98,14 @@ func countValues(src []byte, limit int) (int, bool) {
 			// worth of bytes is skipped.
 			if !expectKey {
 				count++
+				started = true
 			}
 			i = endOfBareWord(src, i)
+		}
+		if started && len(stack) == 0 {
+			// The top-level value is closed. Whatever follows belongs to a
+			// second value, and the decoder will never read it.
+			return count, true
 		}
 		if count > limit {
 			// ⛔ Stop at the limit rather than finishing the count. The caller
