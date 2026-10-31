@@ -70,10 +70,15 @@ type Options struct {
 	// Caption is the table's caption, if any.
 	Caption string
 
-	// MaxRows and MaxColumns override the ceilings in
+	// MaxRows, MaxColumns and MaxCells override the ceilings in
 	// [github.com/go-richdoc/data/shape]. Zero means those.
+	//
+	// ⛔ MaxCells bounds the PRODUCT, which the other two do not: a hundred
+	// thousand rows of a thousand columns is within both of them and is a
+	// hundred million cells. See [shape.MaxCells].
 	MaxRows    int
 	MaxColumns int
+	MaxCells   int
 }
 
 // candidates are the delimiters worth sniffing, in the order a tie is broken.
@@ -88,12 +93,15 @@ func Parse(src []byte, opt Options) (*richdoc.Document, error) {
 	if len(src) > shape.MaxInputBytes {
 		return nil, shape.LimitError{What: "bytes", Limit: shape.MaxInputBytes}
 	}
-	maxRows, maxCols := opt.MaxRows, opt.MaxColumns
+	maxRows, maxCols, maxCells := opt.MaxRows, opt.MaxColumns, opt.MaxCells
 	if maxRows <= 0 {
 		maxRows = shape.MaxRows
 	}
 	if maxCols <= 0 {
 		maxCols = shape.MaxColumns
+	}
+	if maxCells <= 0 {
+		maxCells = shape.MaxCells
 	}
 
 	delim := opt.Delimiter
@@ -129,6 +137,15 @@ func Parse(src []byte, opt Options) (*richdoc.Document, error) {
 		rows = append(rows, rec)
 		if len(rows) > maxRows {
 			return nil, shape.LimitError{What: "rows", Limit: maxRows}
+		}
+		// ⛔ The product, checked here rather than after the loop, because the
+		// rows already read are the allocation the ceiling exists to prevent.
+		// Both factors only grow, so the first crossing is the earliest one.
+		//
+		// ⛔ int64, because on a 32-bit target or js/wasm two ceilings a caller
+		// chose can multiply past an int and come back small and welcoming.
+		if int64(len(rows))*int64(width) > int64(maxCells) {
+			return nil, shape.LimitError{What: "cells", Limit: maxCells}
 		}
 	}
 	// ⛔ Said out loud. An empty document and "this file held no rows" are

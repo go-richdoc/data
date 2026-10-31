@@ -44,6 +44,13 @@ type Options struct {
 	// MaxDepth, MaxNodes, MaxRows and MaxColumns override the ceilings in
 	// [github.com/go-richdoc/data/shape]. Zero means those.
 	MaxDepth, MaxNodes, MaxRows, MaxColumns int
+
+	// MaxSourceValues overrides [shape.MaxSourceValues]: how many values the
+	// source may declare, counted before it is decoded. Zero means that one.
+	//
+	// ⛔ This is the only ceiling here that bounds the DECODER rather than the
+	// document. Raise it and a refused file still costs what it costs to decode.
+	MaxSourceValues int
 }
 
 // Parse reads one JSON value.
@@ -52,6 +59,16 @@ func Parse(src []byte, opt Options) (*richdoc.Document, error) {
 		return nil, shape.LimitError{What: "bytes", Limit: shape.MaxInputBytes}
 	}
 	c := newConv(opt)
+
+	// ⛔ BEFORE THE DECODER, not after it. The node ceiling below is checked
+	// while the document is built, which is after encoding/json has turned the
+	// whole source into an any — so it stopped the answer and not the work.
+	// Measured: two flat arrays both refused at node 500 001, the larger one
+	// eight times the source, cost 243 MB and 1.275 GB. The XML reader, which
+	// counts inside its own token walk, gave the same figure for both.
+	if err := prescan(src, c.maxSourceValues); err != nil {
+		return nil, err
+	}
 
 	// ⛔ A decoder with UseNumber, so 64-bit integers survive. encoding/json's
 	// default turns every number into a float64, and an identifier of more
@@ -88,12 +105,17 @@ type conv struct {
 	opt                                  Options
 	nodes                                int
 	maxDepth, maxNodes, maxRows, maxCols int
+	maxSourceValues                      int
 }
 
 func newConv(opt Options) *conv {
 	c := &conv{opt: opt,
 		maxDepth: opt.MaxDepth, maxNodes: opt.MaxNodes,
-		maxRows: opt.MaxRows, maxCols: opt.MaxColumns}
+		maxRows: opt.MaxRows, maxCols: opt.MaxColumns,
+		maxSourceValues: opt.MaxSourceValues}
+	if c.maxSourceValues <= 0 {
+		c.maxSourceValues = shape.MaxSourceValues
+	}
 	if c.maxDepth <= 0 {
 		c.maxDepth = shape.MaxDepth
 	}
