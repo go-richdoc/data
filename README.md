@@ -5,9 +5,9 @@
 CGO-free, including `GOOS=js`.
 
 ```sh
-richdata sales.csv                        # Markdown on standard output
-richdata -format json -title Orders o.json
-richdata -o notes.md -verbatim server.log
+richdata sales.csv                              # Markdown on standard output
+richdata --format json --title Orders o.json    # or -f json -t Orders
+richdata -o notes.md --verbatim server.log
 ```
 
 ```go
@@ -215,6 +215,32 @@ the old ceiling for a caller who wants it.
 squared off to the widest one, so a file of one 1 000-column row and six hundred
 one-column rows is 601 000 cells from 1 600 read. A count of what was read would
 undercount exactly the file that exploits it.
+
+## The command takes POSIX flags, and says which kind of failure it was
+
+⛔ **`--format`, not `-format`** (v0.3.0). The command was built on the standard
+`flag` package and is now a [cobra](https://github.com/spf13/cobra) command like
+the rest of this fleet's, which means a single dash introduces **shorthands**:
+`-format` would be read as `-f -o -r -m -a -t`. Long flags take two dashes, and
+the common ones gained a shorthand — `-f`, `-t`, `-o`, `-d`. That is a breaking
+change to the command line, which is why this is a minor release and not a
+patch.
+
+⛔ **Two failing statuses, and which is which.** `2` says the command line was
+wrong — an unknown flag, a missing value, the wrong number of arguments, a file
+whose format cannot be told. `1` says the work failed: the file could not be
+read, parsed or written. A caller that cannot tell them apart will retry a bad
+flag forever and give up on a file that was briefly unreadable. Both statuses
+existed before the move and **neither was pinned by a test**, so the move could
+have collapsed them with nothing failing; they are pinned now, ten cases of
+each.
+
+⛔ And the one piece of text-matching left is pinned too. pflag offers no type
+and no sentinel for "that flag is wrong", so the classifier matches its wording
+— checked against pflag v1.0.9 — and a test asserts each of those strings still
+appears. The argument **count** was deliberately moved out of that list into a
+validator of this command's own, so it is decided by a type: every case out of
+text matching is one fewer thing an upgrade can reword underneath us.
 
 ## Checks
 
