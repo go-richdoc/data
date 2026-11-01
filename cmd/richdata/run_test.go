@@ -51,13 +51,13 @@ func TestAFileWithNoExtensionIsRefusedRatherThanGuessed(t *testing.T) {
 	if code := run([]string{p}, &out, &errw); code != 2 {
 		t.Errorf("exited %d", code)
 	}
-	if !strings.Contains(errw.String(), "-format") {
+	if !strings.Contains(errw.String(), "--format") {
 		t.Errorf("the refusal does not say what to do: %q", errw.String())
 	}
 	// And with -format it goes through.
 	out.Reset()
 	errw.Reset()
-	if code := run([]string{"-format", "json", p}, &out, &errw); code != 0 {
+	if code := run([]string{"--format", "json", p}, &out, &errw); code != 0 {
 		t.Errorf("-format json exited %d: %s", code, errw.String())
 	}
 }
@@ -65,7 +65,7 @@ func TestAFileWithNoExtensionIsRefusedRatherThanGuessed(t *testing.T) {
 func TestTheHeaderFlagIsReadAndRefusedProperly(t *testing.T) {
 	p := write(t, "x.csv", "1,2\n3,4\n")
 	var out, errw bytes.Buffer
-	if code := run([]string{"-header", "always", p}, &out, &errw); code != 0 {
+	if code := run([]string{"--header", "always", p}, &out, &errw); code != 0 {
 		t.Fatalf("exited %d: %s", code, errw.String())
 	}
 	if !strings.Contains(out.String(), "| 1 | 2 |") {
@@ -73,7 +73,7 @@ func TestTheHeaderFlagIsReadAndRefusedProperly(t *testing.T) {
 	}
 	out.Reset()
 	errw.Reset()
-	if code := run([]string{"-header", "perhaps", p}, &out, &errw); code == 0 {
+	if code := run([]string{"--header", "perhaps", p}, &out, &errw); code == 0 {
 		t.Error("-header perhaps was accepted")
 	}
 	if !strings.Contains(errw.String(), "detect, always or never") {
@@ -84,12 +84,12 @@ func TestTheHeaderFlagIsReadAndRefusedProperly(t *testing.T) {
 func TestADelimiterMustBeOneCharacter(t *testing.T) {
 	p := write(t, "x.csv", "a|b\n1|2\n")
 	var out, errw bytes.Buffer
-	if code := run([]string{"-delimiter", "||", p}, &out, &errw); code == 0 {
+	if code := run([]string{"--delimiter", "||", p}, &out, &errw); code == 0 {
 		t.Error("a two-character delimiter was accepted")
 	}
 	out.Reset()
 	errw.Reset()
-	if code := run([]string{"-delimiter", "|", "-header", "always", p}, &out, &errw); code != 0 {
+	if code := run([]string{"--delimiter", "|", "--header", "always", p}, &out, &errw); code != 0 {
 		t.Fatalf("exited %d: %s", code, errw.String())
 	}
 	if !strings.Contains(out.String(), "| a | b |") {
@@ -126,9 +126,9 @@ func TestEveryRefusalNamesWhatWentWrong(t *testing.T) {
 	}{
 		{nil, "exactly one"},
 		{[]string{"a", "b"}, "exactly one"},
-		{[]string{"-nonesuch", "x.csv"}, ""},
+		{[]string{"--nonesuch", "x.csv"}, ""},
 		{[]string{filepath.Join(t.TempDir(), "absent.csv")}, "absent.csv"},
-		{[]string{"-format", "yaml", write(t, "x.txt", "hi")}, "unknown format"},
+		{[]string{"--format", "yaml", write(t, "x.txt", "hi")}, "unknown format"},
 	} {
 		var out, errw bytes.Buffer
 		code := run(c.args, &out, &errw)
@@ -157,7 +157,7 @@ func TestAnEmptyCSVIsReportedWithItsName(t *testing.T) {
 
 func TestTheTitleAndTheRemainingFlagsReachTheReaders(t *testing.T) {
 	var out, errw bytes.Buffer
-	if code := run([]string{"-title", "Orders", write(t, "x.json", `{"a":1}`)}, &out, &errw); code != 0 {
+	if code := run([]string{"--title", "Orders", write(t, "x.json", `{"a":1}`)}, &out, &errw); code != 0 {
 		t.Fatalf("exited %d: %s", code, errw.String())
 	}
 	if !strings.Contains(out.String(), "Orders") {
@@ -165,7 +165,7 @@ func TestTheTitleAndTheRemainingFlagsReachTheReaders(t *testing.T) {
 	}
 
 	out.Reset()
-	if code := run([]string{"-no-tables", write(t, "y.json", `[{"a":1},{"a":2}]`)}, &out, &errw); code != 0 {
+	if code := run([]string{"--no-tables", write(t, "y.json", `[{"a":1},{"a":2}]`)}, &out, &errw); code != 0 {
 		t.Fatalf("exited %d", code)
 	}
 	if strings.Contains(out.String(), "| a |") {
@@ -173,7 +173,7 @@ func TestTheTitleAndTheRemainingFlagsReachTheReaders(t *testing.T) {
 	}
 
 	out.Reset()
-	if code := run([]string{"-verbatim", write(t, "z.txt", "a\n\nb\n")}, &out, &errw); code != 0 {
+	if code := run([]string{"--verbatim", write(t, "z.txt", "a\n\nb\n")}, &out, &errw); code != 0 {
 		t.Fatalf("exited %d", code)
 	}
 	if !strings.Contains(out.String(), "```") {
