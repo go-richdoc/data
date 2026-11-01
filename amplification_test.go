@@ -19,6 +19,7 @@ package data_test
 import (
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -44,8 +45,18 @@ import (
 // out as 18446744073642448112, which is the sort of number that survives a
 // review because nobody reads twenty digits as "negative four hundred
 // kilobytes". Found by running the report, not by reading it.
+// ⛔ AND IT RUNS UNDER A HEAP CAP, because these are bomb tests: the rule is
+// that one must not be able to take the machine with it. The figure it holds
+// the process to is [heapCap], and what it returns is what the call asked for —
+// see the two-assertion note on [heapCap] for why the cap alone is not enough.
 func allocated(t *testing.T, f func() (*richdoc.Document, error)) (total uint64, retained int64, err error) {
 	t.Helper()
+
+	// The limit is process-wide, so it is restored even if f panics, and no
+	// test that sets it may run in parallel with another. None here do.
+	previous := debug.SetMemoryLimit(heapCap)
+	t.Cleanup(func() { debug.SetMemoryLimit(previous) })
+
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
@@ -62,8 +73,39 @@ func allocated(t *testing.T, f func() (*richdoc.Document, error)) (total uint64,
 	// entitled to collect the very thing being weighed and "retained" comes
 	// back as noise near zero.
 	runtime.KeepAlive(doc)
+
+	// ⛔ The cap is checked here rather than trusted, because a soft limit does
+	// not refuse an allocation — it only makes the collector try harder. If the
+	// process is past it, the limit failed to hold and every figure above was
+	// taken on a machine under pressure.
+	if after.Sys > heapCap {
+		t.Errorf("the process holds %d bytes, past the %d-byte cap: the soft limit "+
+			"did not hold, so these figures were taken under memory pressure",
+			after.Sys, heapCap)
+	}
 	return total, retained, err
 }
+
+// heapCap is how much this test binary may hold from the operating system while
+// a bomb runs.
+//
+// ⛔ MEASURED, not chosen: the most expensive refusal in this package is the XML
+// node ceiling, which asks for about 159 MB, and the source builders hold
+// another 67 MB for a document at the input ceiling. 512 MiB is a shade over
+// twice that, which leaves the legitimate cases room and still fails here
+// instead of on somebody's machine.
+//
+// ⛔ AND IT IS THE WEAKER OF TWO GUARDS. A soft limit is a GC target, not an
+// allocation refusal: a reader whose ceiling regressed does not reserve more
+// memory under it, it makes the collector work harder, so the failure arrives
+// as a test that takes minutes — and a slow test reads as a slow machine rather
+// than as a broken bound. What NAMES a regression is the allocation figure each
+// case asserts, which is cumulative and cannot be collected away.
+//
+// ⛔ `ulimit -v` would be the hard version and is a no-op on darwin (RLIMIT_AS
+// is ignored there), so the shell guard protects CI and nothing locally, which
+// is backwards from where a bomb gets written. Hence the Go-side limit.
+const heapCap = 512 << 20
 
 // --- the adversarial inputs, each one the cheapest shape of its format ---
 

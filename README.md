@@ -198,6 +198,36 @@ at `encoding/json/jsontext/state.go:53`, so `GOEXPERIMENT=jsonv2` does not
 change it) — the decode of a value into an `any` *does* recurse, one frame per
 level, and it is that constant and not iteration that keeps it bounded.
 
+### ⛔ These are bomb tests, so they run under a cap
+
+The XML node ceiling asks for about **159 MB** to refuse a document, and it runs
+on every CI job of every target. Every measurement here now runs under a
+**512 MiB** heap cap — twice the most expensive case plus the 67 MB a source at
+the input ceiling occupies — and the process is *checked* against it afterwards
+rather than trusted, because a soft limit does not refuse an allocation.
+
+⛔ **The cap is the weaker of two guards.** `GOMEMLIMIT` is a GC target: a reader
+whose ceiling regressed would not reserve more memory under it, it would make
+the collector work harder — so the failure arrives as a test that takes minutes,
+and a slow test reads as a slow machine rather than a broken bound. What *names*
+a regression is the allocation each case asserts: **1 MiB** for JSON, which
+refuses in 40 bytes before `encoding/json` decodes anything, and 256 MiB for
+XML, whose figure is the ceiling's own cost. A four-order jump in the first says
+so in one line, at once.
+
+⛔ And `ulimit -v` would be the hard version, but it is a **no-op on darwin**
+(RLIMIT_AS is ignored), so the shell guard protects CI and nothing on the machine
+where a bomb gets written.
+
+⛔ **The self-check for all this used a delta, and that was wrong** — an hour
+after this repository documented why. `after.Sys - before.Sys` came out
+164 292 904 − 164 292 904 = **0**: the earlier bombs had grown the arena to
+164 MB, so 64 MiB of fresh live data fitted inside it and moved `Sys` not at
+all. It passed run alone and failed run last. `Sys` only grows, so only its
+absolute value means anything, and the check now asserts two absolute facts —
+that `Sys` is at least what the process holds, and that it is large enough for a
+small cap to catch.
+
 ### ⛔ Two ceilings that multiply
 
 `MaxRows` and `MaxColumns` bounded the factors and nothing bounded the product:
