@@ -219,14 +219,23 @@ so in one line, at once.
 (RLIMIT_AS is ignored), so the shell guard protects CI and nothing on the machine
 where a bomb gets written.
 
-⛔ **The self-check for all this used a delta, and that was wrong** — an hour
-after this repository documented why. `after.Sys - before.Sys` came out
-164 292 904 − 164 292 904 = **0**: the earlier bombs had grown the arena to
-164 MB, so 64 MiB of fresh live data fitted inside it and moved `Sys` not at
-all. It passed run alone and failed run last. `Sys` only grows, so only its
-absolute value means anything, and the check now asserts two absolute facts —
-that `Sys` is at least what the process holds, and that it is large enough for a
-small cap to catch.
+⛔ **The guards live in
+[`richdoc/bombtest`](https://pkg.go.dev/github.com/go-richdoc/richdoc/bombtest)
+now**, and the copy that used to be here is how the mistakes got made. `Bound`
+has no defaults — the reason, the allocation ceiling and the held ceiling are
+all required — and `Run` refuses a Bound that left any of them unanswered
+*before* the bomb allocates. What stays here is this package's own question,
+which a shared gate cannot answer: whether both inputs were refused by the
+**same** ceiling.
+
+The one that moved there with a story attached: **the self-check used a delta**,
+an hour after this repository documented why that is wrong.
+`after.Sys - before.Sys` came out 164 292 904 − 164 292 904 = **0** — the
+earlier bombs had grown the arena to 164 MB, so 64 MiB of fresh live data
+fitted inside it and moved `Sys` not at all. It passed run alone and failed run
+last. A delta of `Sys` is now not expressible: `Result.Held` is absolute and
+`Result.Asked` is the difference of `TotalAlloc`, which is cumulative and
+therefore sound.
 
 ### ⛔ Two ceilings that multiply
 

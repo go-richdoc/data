@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/go-richdoc/markdown v0.11.0
-	github.com/go-richdoc/richdoc v0.7.0
+	github.com/go-richdoc/richdoc v0.8.0
 	github.com/spf13/cobra v1.10.2
 )
 
