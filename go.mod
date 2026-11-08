@@ -1,6 +1,6 @@
 module github.com/go-richdoc/data
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/go-richdoc/markdown v0.11.0
