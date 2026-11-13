@@ -1,8 +1,8 @@
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
-github.com/go-richdoc/markdown v0.12.0 h1:9CVzwUCLExZ/Jutl3D6johg98bT/4MJCW9r++aD40Ao=
-github.com/go-richdoc/markdown v0.12.0/go.mod h1:rDgb7aYqAwOKS4a8cfLvn5ega/uar6qSGyK028jOn78=
-github.com/go-richdoc/richdoc v0.9.0 h1:t3XcDNQN+e2KrEERu6qctlYahSDZkbEGgGDeZxta3iA=
-github.com/go-richdoc/richdoc v0.9.0/go.mod h1:xsldfEfOJy3uWrzpXuz57+w915kDv5B0rPGKiqAzHQs=
+github.com/go-richdoc/markdown v0.13.0 h1:XwnfX8DgIVhg/+dovZxiFzGPByWWJrnp/5Qddx90yGI=
+github.com/go-richdoc/markdown v0.13.0/go.mod h1:u+9OEgWWNN/7ShRZnkxevLmiyxy+GADiqhfN3TFr2xs=
+github.com/go-richdoc/richdoc v0.10.0 h1:+BsIDF1iX1QNzk96uMX6VbsVmiGwXoabFdBkI+01UBQ=
+github.com/go-richdoc/richdoc v0.10.0/go.mod h1:zZIyjS9RnUk0qC9kz1cTZsQHdbBZlKSMXWsTZOEeowc=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
